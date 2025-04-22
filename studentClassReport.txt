@@ -1,0 +1,50 @@
+CREATE DEFINER=`u640280979_iyfdashboard`@`127.0.0.1` PROCEDURE `studentClassReport`(IN `in_student_id` INT)
+BEGIN
+  SELECT 
+    u.user_id            AS student_id,
+    u.name               AS student_name,
+    u.mobile_number,
+    u.group_name,
+    DATE(att.AttendanceDate) AS class_date,
+    CASE 
+      WHEN sa.StudentId IS NOT NULL THEN 'Present'
+      ELSE 'Absent'
+    END                     AS status,
+    sa.AttendanceSession,
+  
+    -- build "present/total" as VARCHAR
+    CONCAT(
+      CAST(
+        SUM(CASE WHEN sa.StudentId IS NOT NULL THEN 1 ELSE 0 END)
+          OVER (PARTITION BY u.user_id)
+        AS CHAR
+      ),
+      '/',
+      CAST(
+        COUNT(*) OVER (PARTITION BY u.user_id)
+        AS CHAR
+      )
+    )                    AS group_ratio
+
+  FROM (
+    -- all (group × date) where a class happened
+    SELECT 
+      DATE(sa.AttendanceDate) AS AttendanceDate,
+      u.group_name
+    FROM studentAttendance sa
+    JOIN users u 
+      ON sa.StudentId = u.user_id
+    GROUP BY DATE(sa.AttendanceDate), u.group_name
+  ) AS att
+
+  JOIN users u 
+    ON u.group_name = att.group_name
+
+  LEFT JOIN studentAttendance sa 
+    ON sa.StudentId = u.user_id
+   AND DATE(sa.AttendanceDate) = att.AttendanceDate
+
+  WHERE u.user_id = in_student_id
+
+  ORDER BY att.AttendanceDate;
+END

@@ -1,0 +1,26 @@
+CREATE DEFINER=`u640280979_iyfdashboard`@`127.0.0.1` PROCEDURE `GetAttendanceRatioByGroupAndMonth`(
+    IN p_group_name VARCHAR(50),
+    IN p_month INT,
+    IN p_year INT
+)
+BEGIN
+    DECLARE total_students INT;
+    DECLARE attended_students INT;
+
+    -- 1. Total number of students in the given group
+    SELECT COUNT(*) INTO total_students
+    FROM u640280979_iyfdashboard.users
+    WHERE group_name LIKE CONCAT('%', p_group_name, '%');
+
+    -- 2. Count distinct dates in specified month/year for attendances
+    SELECT COUNT(DISTINCT sa.AttendanceId) INTO attended_students
+    FROM studentAttendance sa
+    INNER JOIN u640280979_iyfdashboard.users u ON u.user_id = sa.AttendanceId
+    WHERE u.group_name LIKE CONCAT('%', p_group_name, '%')
+      AND MONTH(sa.AttendanceDate) = p_month
+      AND YEAR(sa.AttendanceDate) = p_year
+      AND sa.AttendanceSession IS NOT NULL;
+
+    -- Return the ratio as result
+    SELECT CONCAT(attended_students, '/', total_students) AS AttendanceRatio;
+END
