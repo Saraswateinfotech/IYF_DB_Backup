@@ -1,4 +1,6 @@
-CREATE DEFINER=`u640280979_iyfdashboard`@`127.0.0.1` PROCEDURE `studentClassReport`(IN `in_student_id` INT)
+CREATE DEFINER=`u234037150_iyfdashboard`@`127.0.0.1` PROCEDURE `studentClassReport`(
+  IN `in_student_id` INT
+)
 BEGIN
   SELECT 
     u.user_id            AS student_id,
@@ -24,24 +26,24 @@ BEGIN
         COUNT(*) OVER (PARTITION BY u.user_id)
         AS CHAR
       )
-    )                    AS group_ratio
+    ) AS group_ratio
 
   FROM (
     -- all (group × date) where a class happened
     SELECT 
       DATE(sa.AttendanceDate) AS AttendanceDate,
       u.group_name
-    FROM studentAttendance sa
-    JOIN users u 
+    FROM u234037150_iyfdashboard.studentAttendance AS sa
+    JOIN u234037150_iyfdashboard.users AS u 
       ON sa.StudentId = u.user_id
     GROUP BY DATE(sa.AttendanceDate), u.group_name
   ) AS att
 
-  JOIN users u 
+  JOIN u234037150_iyfdashboard.users AS u 
     ON u.group_name = att.group_name
 
-  LEFT JOIN studentAttendance sa 
-    ON sa.StudentId = u.user_id
+  LEFT JOIN u234037150_iyfdashboard.studentAttendance AS sa 
+    ON sa.StudentId            = u.user_id
    AND DATE(sa.AttendanceDate) = att.AttendanceDate
 
   WHERE u.user_id = in_student_id
