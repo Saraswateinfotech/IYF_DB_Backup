@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1:3306
--- Generation Time: Apr 22, 2025 at 05:03 AM
+-- Generation Time: Apr 25, 2025 at 05:23 AM
 -- Server version: 10.11.10-MariaDB-log
 -- PHP Version: 7.2.34
 
@@ -18,8 +18,215 @@ SET time_zone = "+00:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- Database: `u640280979_iyfdashboard`
+-- Database: `u234037150_iyfdashboard`
 --
+
+DELIMITER $$
+--
+-- Procedures
+--
+CREATE DEFINER=`u234037150_iyfdashboard`@`127.0.0.1` PROCEDURE `GetAttendanceRatioByGroupAndMonth` (IN `p_group_name` VARCHAR(50), IN `p_month` INT, IN `p_year` INT)   BEGIN
+  DECLARE total_students    INT;
+  DECLARE attended_students INT;
+
+  -- 1. Count total students in the group
+  SELECT COUNT(*) INTO total_students
+    FROM users
+   WHERE group_name LIKE CONCAT('%', p_group_name, '%');
+
+  -- 2. Count distinct attendance days in the month/year
+  SELECT COUNT(DISTINCT AttendanceDate) INTO attended_students
+    FROM studentAttendance AS sa
+    JOIN users AS u
+      ON u.user_id = sa.StudentId
+   WHERE u.group_name LIKE CONCAT('%', p_group_name, '%')
+     AND MONTH(sa.AttendanceDate) = p_month
+     AND YEAR(sa.AttendanceDate)  = p_year
+     AND sa.AttendanceSession IS NOT NULL;
+
+  -- 3. Return the ratio
+  SELECT CONCAT(attended_students, '/', total_students) AS AttendanceRatio;
+END$$
+
+CREATE DEFINER=`u234037150_iyfdashboard`@`127.0.0.1` PROCEDURE `progressReportGroupWise` (IN `p_sessionName` VARCHAR(50), IN `p_selectedYear` INT, IN `p_selectedMonth` INT, IN `p_facilitatorId` VARCHAR(50), IN `p_groupPrefix` VARCHAR(50))   BEGIN
+  -- local vars to hold final year/month
+  DECLARE v_year  INT;
+  DECLARE v_month INT;
+
+  -- default them if caller passed NULL or 0
+  SET v_year  = IF(p_selectedYear  IS NULL OR p_selectedYear  = 0, YEAR(CURDATE()), p_selectedYear);
+  SET v_month = IF(p_selectedMonth IS NULL OR p_selectedMonth = 0, MONTH(CURDATE()), p_selectedMonth);
+
+  WITH
+    dates AS (
+      SELECT DISTINCT DATE(AttendanceDate) AS class_date
+      FROM u234037150_iyfdashboard.studentAttendance
+      WHERE AttendanceSession = p_sessionName
+        AND YEAR(AttendanceDate)  = v_year
+        AND MONTH(AttendanceDate) = v_month
+    ),
+    students AS (
+      SELECT
+        u.user_id,
+        u.name,
+        u.mobile_number,
+        u.chanting_round,
+        u.facilitatorId
+      FROM u234037150_iyfdashboard.users AS u
+      WHERE u.facilitatorId = p_facilitatorId
+        AND u.group_name LIKE CONCAT(p_groupPrefix, '%')
+    )
+  SELECT
+    s.user_id          AS student_id,
+    s.name             AS student_name,
+    s.mobile_number,
+    s.chanting_round,
+    s.facilitatorId,
+    CAST(
+      CONCAT_WS(
+        '/',
+        SUM(CASE WHEN sa.StudentId IS NOT NULL THEN 1 ELSE 0 END),
+        COUNT(*)
+      )
+      AS CHAR(10)
+    ) AS GroupRatio
+  FROM dates AS d
+  CROSS JOIN students AS s
+  LEFT JOIN u234037150_iyfdashboard.studentAttendance AS sa
+    ON sa.StudentId            = s.user_id
+   AND DATE(sa.AttendanceDate) = d.class_date
+   AND sa.AttendanceSession    = p_sessionName
+  GROUP BY
+    s.user_id,
+    s.name,
+    s.mobile_number,
+    s.chanting_round,
+    s.facilitatorId
+  ORDER BY s.name;
+END$$
+
+CREATE DEFINER=`u234037150_iyfdashboard`@`127.0.0.1` PROCEDURE `sp_get_frontlinerdetail_report` (IN `in_frontliner_id` VARCHAR(20))   BEGIN
+  SELECT
+    COUNT(user_id) AS total_register,
+    IFNULL(SUM(payment_amount), 0) AS total_amount,
+    IFNULL(
+      SUM(
+        CASE 
+          WHEN payment_status = 'not_received' THEN payment_amount 
+          ELSE 0 
+        END
+      ), 0
+    ) AS pending_amount,
+    IFNULL(
+      SUM(
+        CASE 
+          WHEN YEARWEEK(registration_date,1) = YEARWEEK(CURDATE(),1)
+          THEN 1 ELSE 0
+        END
+      ), 0
+    ) AS weekly_total_registered_student_number,
+    IFNULL(
+      SUM(
+        CASE 
+          WHEN student_status = 'will_come'
+           AND YEARWEEK(registration_date,1) = YEARWEEK(CURDATE(),1)
+          THEN 1 ELSE 0
+        END
+      ), 0
+    ) AS weekly_will_come_student_number
+  FROM `users`
+  WHERE `frontliner_id` = in_frontliner_id;
+END$$
+
+CREATE DEFINER=`u234037150_iyfdashboard`@`127.0.0.1` PROCEDURE `sp_get_stddashboard_report` ()   BEGIN
+  SELECT
+    COUNT(user_id) AS total_register,
+    IFNULL(SUM(payment_amount), 0) AS total_amount,
+    IFNULL(
+      SUM(
+        CASE
+          WHEN payment_status = 'not_received' THEN payment_amount
+          ELSE 0
+        END
+      ),
+      0
+    ) AS pending_amount,
+    IFNULL(
+      SUM(
+        CASE
+          WHEN YEARWEEK(registration_date,1) = YEARWEEK(CURDATE(),1)
+          THEN 1
+          ELSE 0
+        END
+      ),
+      0
+    ) AS weekly_total_registered_student_number,
+    IFNULL(
+      SUM(
+        CASE
+          WHEN student_status = 'will_come'
+           AND YEARWEEK(registration_date,1) = YEARWEEK(CURDATE(),1)
+          THEN 1
+          ELSE 0
+        END
+      ),
+      0
+    ) AS weekly_will_come_student_number
+  FROM users;
+END$$
+
+CREATE DEFINER=`u234037150_iyfdashboard`@`127.0.0.1` PROCEDURE `studentClassReport` (IN `in_student_id` INT)   BEGIN
+  SELECT 
+    u.user_id            AS student_id,
+    u.name               AS student_name,
+    u.mobile_number,
+    u.group_name,
+    DATE(att.AttendanceDate) AS class_date,
+    CASE 
+      WHEN sa.StudentId IS NOT NULL THEN 'Present'
+      ELSE 'Absent'
+    END                     AS status,
+    sa.AttendanceSession,
+  
+    -- build "present/total" as VARCHAR
+    CONCAT(
+      CAST(
+        SUM(CASE WHEN sa.StudentId IS NOT NULL THEN 1 ELSE 0 END)
+          OVER (PARTITION BY u.user_id)
+        AS CHAR
+      ),
+      '/',
+      CAST(
+        COUNT(*) OVER (PARTITION BY u.user_id)
+        AS CHAR
+      )
+    ) AS group_ratio
+
+  FROM (
+    -- all (group × date) where a class happened
+    SELECT 
+      DATE(sa.AttendanceDate) AS AttendanceDate,
+      u.group_name
+    FROM u234037150_iyfdashboard.studentAttendance AS sa
+    JOIN u234037150_iyfdashboard.users AS u 
+      ON sa.StudentId = u.user_id
+    GROUP BY DATE(sa.AttendanceDate), u.group_name
+  ) AS att
+
+  JOIN u234037150_iyfdashboard.users AS u 
+    ON u.group_name = att.group_name
+
+  LEFT JOIN u234037150_iyfdashboard.studentAttendance AS sa 
+    ON sa.StudentId            = u.user_id
+   AND DATE(sa.AttendanceDate) = att.AttendanceDate
+
+  WHERE u.user_id = in_student_id
+
+  ORDER BY att.AttendanceDate;
+END$$
+
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
@@ -225,7 +432,9 @@ INSERT INTO `users` (`user_id`, `name`, `dob`, `mobile_number`, `frontliner_name
 (321, 'raj', '2025-04-12', '741287310', NULL, 'student', 'near shubham circle ', 'online', 'cash', 100.00, 'not_received', NULL, 1, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2025-04-14 15:04:13', NULL, 'will_come', NULL, NULL, 'ROH634115', 'PAR696446', NULL, 'Nachiketa', 38, 'HG573659'),
 (322, 'madhav', '2025-04-12', '741287358', NULL, 'student', 'near shubham circle ', 'online', 'online', 100.00, 'received', NULL, 4, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2025-04-14 15:04:13', NULL, 'will_come', NULL, NULL, 'ROH634115', 'PAR696446', NULL, 'Arjun', 37, 'HGV442127'),
 (323, 'mohan', '2025-04-12', '74128335', NULL, 'student', 'near shubham circle ', 'online', 'cash', 100.00, 'not_received', NULL, 9, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2025-04-14 15:04:13', NULL, 'will_come', NULL, NULL, 'ROH634115', 'PAR696446', NULL, 'DYS-2', 35, 'HG368829'),
-(324, 'Abhay', '2025-05-12', '825614725', NULL, 'job_candidate', 'near clock tower ', 'online', 'unpaid', 200.00, 'received', NULL, 5, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2025-04-14 11:46:59', NULL, 'might_come', NULL, NULL, 'NIL185406', 'MAD972745', NULL, 'Arjun', 38, 'HG573659');
+(324, 'Abhay', '2025-05-12', '825614725', NULL, 'job_candidate', 'near clock tower ', 'online', 'unpaid', 200.00, 'received', NULL, 5, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2025-04-14 11:46:59', NULL, 'might_come', NULL, NULL, 'NIL185406', 'MAD972745', NULL, 'Arjun', 38, 'HG573659'),
+(325, 'Rohan', '2025-04-05', 'p', NULL, 'student', 'Mansrover', 'offline', 'online', 100.00, 'received', NULL, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2025-04-23 05:54:49', NULL, NULL, NULL, 'pay_QMOHzuv4EEpk3o', 'NIT106966', 'NIT106966', NULL, 'new', NULL, NULL),
+(326, 'HariHar', '2025-05-11', '894614459', NULL, 'job_candidate', 'near clock tower ', 'online', 'cash', 200.00, 'received', NULL, 4, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2025-09-15 11:43:59', NULL, 'might_come', NULL, NULL, 'NIL185406', 'MAD972745', NULL, 'Nachiketa', 38, 'HG573659');
 
 --
 -- Indexes for dumped tables
@@ -301,7 +510,7 @@ ALTER TABLE `studentbatch`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=325;
+  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=327;
 
 --
 -- Constraints for dumped tables
