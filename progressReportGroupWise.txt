@@ -1,4 +1,4 @@
-CREATE DEFINER=`u640280979_iyfdashboard`@`127.0.0.1` PROCEDURE `progressReportGroupWise`(
+CREATE DEFINER=`u234037150_iyfdashboard`@`127.0.0.1` PROCEDURE `progressReportGroupWise`(
   IN p_sessionName   VARCHAR(50),
   IN p_selectedYear  INT,
   IN p_selectedMonth INT,
@@ -6,15 +6,21 @@ CREATE DEFINER=`u640280979_iyfdashboard`@`127.0.0.1` PROCEDURE `progressReportGr
   IN p_groupPrefix   VARCHAR(50)
 )
 BEGIN
+  -- local vars to hold final year/month
+  DECLARE v_year  INT;
+  DECLARE v_month INT;
+
+  -- default them if caller passed NULL or 0
+  SET v_year  = IF(p_selectedYear  IS NULL OR p_selectedYear  = 0, YEAR(CURDATE()), p_selectedYear);
+  SET v_month = IF(p_selectedMonth IS NULL OR p_selectedMonth = 0, MONTH(CURDATE()), p_selectedMonth);
 
   WITH
     dates AS (
-      SELECT DISTINCT
-        DATE(AttendanceDate) AS class_date
-      FROM u640280979_iyfdashboard.studentAttendance
+      SELECT DISTINCT DATE(AttendanceDate) AS class_date
+      FROM u234037150_iyfdashboard.studentAttendance
       WHERE AttendanceSession = p_sessionName
-        AND YEAR(AttendanceDate)  = p_selectedYear
-        AND MONTH(AttendanceDate) = p_selectedMonth
+        AND YEAR(AttendanceDate)  = v_year
+        AND MONTH(AttendanceDate) = v_month
     ),
     students AS (
       SELECT
@@ -23,11 +29,10 @@ BEGIN
         u.mobile_number,
         u.chanting_round,
         u.facilitatorId
-      FROM u640280979_iyfdashboard.users AS u
+      FROM u234037150_iyfdashboard.users AS u
       WHERE u.facilitatorId = p_facilitatorId
-        AND u.group_name   LIKE CONCAT(p_groupPrefix, '%')
+        AND u.group_name LIKE CONCAT(p_groupPrefix, '%')
     )
-
   SELECT
     s.user_id          AS student_id,
     s.name             AS student_name,
@@ -40,11 +45,11 @@ BEGIN
         SUM(CASE WHEN sa.StudentId IS NOT NULL THEN 1 ELSE 0 END),
         COUNT(*)
       )
-      AS CHAR(10) CHARACTER SET utf8
+      AS CHAR(10)
     ) AS GroupRatio
   FROM dates AS d
   CROSS JOIN students AS s
-  LEFT JOIN u640280979_iyfdashboard.studentAttendance AS sa
+  LEFT JOIN u234037150_iyfdashboard.studentAttendance AS sa
     ON sa.StudentId            = s.user_id
    AND DATE(sa.AttendanceDate) = d.class_date
    AND sa.AttendanceSession    = p_sessionName
@@ -55,5 +60,4 @@ BEGIN
     s.chanting_round,
     s.facilitatorId
   ORDER BY s.name;
-
 END
